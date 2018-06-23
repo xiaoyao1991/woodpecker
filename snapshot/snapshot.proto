@@ -1,0 +1,27 @@
+syntax = "proto3";
+package snapshot;
+
+message StorageItem {
+    bytes key = 1;
+    bytes val = 2;
+}
+
+message StorageItems {
+    repeated StorageItem items = 1;
+}
+
+message AccountDetail {
+    bytes nonce = 1;
+    bytes balance = 2;
+    bytes storageRoot = 3;
+    bytes codeHash = 4;
+
+    bytes rlp = 5;
+
+    StorageItems storage = 6;
+}
+
+message Account {
+    bytes addr = 1;
+    AccountDetail detail = 2;
+}

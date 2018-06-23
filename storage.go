@@ -13,10 +13,14 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/xiaoyao1991/woodpecker/snapshot"
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/golang/protobuf/proto"
 )
 
 const batchSize = 1000
 const numRecords = 37973685
+const numStorageLines = 80279576
 const numThreads = 63
 
 // emptyRoot is the known root hash of an empty trie.
@@ -109,9 +113,95 @@ func getStorage(dbpath string) {
 	wg.Wait()
 }
 
+func processStorage() {
+	db, err := leveldb.OpenFile("./storage", nil)
+	failOnError(err, "Fail to open db")
+	defer db.Close()
+
+	file, err := os.Open("storage.txt")
+	failOnError(err, "Fail to open storage.txt")
+	defer file.Close()
+
+	currStorageRoot := ""
+	storageAgg := make(map[string]string)
+	serialized := false
+	countDistinctStorageTries := 0
+
+	count := 0
+	progress := 0.00
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		count ++
+		if count >= numStorageLines / 10000 {
+			count = 0
+			progress += 0.01
+			fmt.Println(progress)
+		}
+
+		kvs := strings.Split(scanner.Text(), ":")
+
+		storageRoot := kvs[0]
+		storageKey := kvs[1]
+		storageVal := kvs[2]
+
+		if currStorageRoot == storageRoot {
+			storageAgg[storageKey] = storageVal
+		} else {
+			if !serialized {
+				var items []*snapshot.StorageItem
+				for k, v := range storageAgg {
+					storageItem := &snapshot.StorageItem{Key: common.Hex2Bytes(k), Val: common.Hex2Bytes(v)}
+					items = append(items, storageItem)
+				}
+
+				storageItems := &snapshot.StorageItems{Items: items}
+				out, err := proto.Marshal(storageItems)
+				failOnError(err, "Fail to pb encode")
+
+				err = db.Put(common.Hex2Bytes(currStorageRoot), out, nil)
+				failOnError(err, "Fail to write to db")
+				countDistinctStorageTries ++
+				serialized = true
+			}
+
+			// start next agg
+			hasKey, _ := db.Has(common.Hex2Bytes(storageRoot), nil)
+			if hasKey {
+				continue
+			}
+			currStorageRoot = storageRoot
+			storageAgg = make(map[string]string)
+			serialized = false
+		}
+	}
+
+	// last one
+	if !serialized {
+		var items []*snapshot.StorageItem
+		for k, v := range storageAgg {
+			storageItem := &snapshot.StorageItem{Key: common.Hex2Bytes(k), Val: common.Hex2Bytes(v)}
+			items = append(items, storageItem)
+		}
+
+		storageItems := &snapshot.StorageItems{Items: items}
+		out, err := proto.Marshal(storageItems)
+		failOnError(err, "Fail to pb encode")
+
+		err = db.Put(common.Hex2Bytes(currStorageRoot), out, nil)
+		failOnError(err, "Fail to write to db")
+		countDistinctStorageTries ++
+		serialized = true
+	}
+	failOnError(scanner.Err(), "Error scanning")
+
+	fmt.Printf("[Process] Processed %d distinct storage tries\n", countDistinctStorageTries)
+}
+
 func main() {
 	startTs := time.Now()
-	getStorage()
+	//getStorage()
+	processStorage()
 	elapsedTime := time.Since(startTs)
 	fmt.Println("[BUILDING FRONTLINE] Time taken: ", elapsedTime.Seconds())
 }
