@@ -16,6 +16,7 @@ import (
 	"github.com/xiaoyao1991/woodpecker/snapshot"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/golang/protobuf/proto"
+	"gopkg.in/cheggaaa/pb.v1"
 )
 
 const batchSize = 1000
@@ -127,17 +128,10 @@ func processStorage() {
 	serialized := false
 	countDistinctStorageTries := 0
 
-	count := 0
-	progress := 0.00
-
+	bar := pb.StartNew(numStorageLines)
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		count ++
-		if count >= numStorageLines / 10000 {
-			count = 0
-			progress += 0.01
-			fmt.Println(progress)
-		}
+		bar.Increment()
 
 		kvs := strings.Split(scanner.Text(), ":")
 
@@ -148,7 +142,7 @@ func processStorage() {
 		if currStorageRoot == storageRoot {
 			storageAgg[storageKey] = storageVal
 		} else {
-			if !serialized {
+			if !serialized && currStorageRoot != "" {
 				var items []*snapshot.StorageItem
 				for k, v := range storageAgg {
 					storageItem := &snapshot.StorageItem{Key: common.Hex2Bytes(k), Val: common.Hex2Bytes(v)}
@@ -172,9 +166,11 @@ func processStorage() {
 			}
 			currStorageRoot = storageRoot
 			storageAgg = make(map[string]string)
+			storageAgg[storageKey] = storageVal
 			serialized = false
 		}
 	}
+	bar.FinishPrint("End")
 
 	// last one
 	if !serialized {

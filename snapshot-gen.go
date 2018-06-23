@@ -13,6 +13,7 @@ import (
 	"github.com/xiaoyao1991/woodpecker/snapshot"
 	"github.com/golang/protobuf/proto"
 	"github.com/ethereum/go-ethereum/crypto"
+	"gopkg.in/cheggaaa/pb.v1"
 )
 
 const accountFile = "data.txt"
@@ -44,17 +45,10 @@ func buildSnapshot() {
 	out, _ := os.OpenFile(outputSnapshotFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	defer out.Close()
 
-	count := 0
-	progress := 0.00
-
+	bar := pb.StartNew(numRecords)
 	scanner := bufio.NewScanner(accountFile)
 	for scanner.Scan() {
-		count ++
-		if count >= numRecords / 10000 {
-			count = 0
-			progress += 0.01
-			fmt.Printf("%.2f%%\n", progress)
-		}
+		bar.Increment()
 
 		kvs := strings.Split(scanner.Text(), ":")
 		val := common.Hex2Bytes(kvs[1])
@@ -98,6 +92,7 @@ func buildSnapshot() {
 		failOnError(err, "Fail to marshall")
 		out.WriteString(fmt.Sprintf("%s\n", common.Bytes2Hex(b)))
 	}
+	bar.FinishPrint("End")
 
 	failOnError(scanner.Err(), "Fail to scan account file")
 }

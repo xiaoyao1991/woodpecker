@@ -14,6 +14,7 @@ import (
 	"github.com/xiaoyao1991/woodpecker/snapshot"
 	"github.com/xiaoyao1991/go-ethereum/rlp"
 	"github.com/golang/protobuf/proto"
+	"gopkg.in/cheggaaa/pb.v1"
 )
 
 const numRecords = 37973685
@@ -73,7 +74,7 @@ func frontlineWithVerification() {
 					}
 
 					if tree.Hash() != common.BytesToHash(account.Detail.StorageRoot) {
-						fmt.Println("StorageRoot not match!", common.Bytes2Hex(tree.Root()), "\t", common.Bytes2Hex(account.Detail.StorageRoot))
+						log.Fatal("StorageRoot not match!", common.Bytes2Hex(tree.Root()), "\t", common.Bytes2Hex(account.Detail.StorageRoot))
 					}
 				}
 
@@ -109,21 +110,15 @@ func frontlineWithVerification() {
 		}(i)
 	}
 
-	count := 0
-	progress := 0.00
-
+	bar := pb.StartNew(numRecords)
 	scanner := bufio.NewScanner(file)
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024*1024)
 	for scanner.Scan() {
-		count ++
-		if count >= numRecords / 10000 {
-			count = 0
-			progress += 0.01
-			fmt.Printf("%.2f%%\n", progress)
-		}
+		bar.Increment()
 		queue <- scanner.Text()
 	}
+	bar.FinishPrint("End")
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
@@ -160,17 +155,10 @@ func rebuildFromFrontline() {
 	tree, err := trie.New(common.Hash{}, db)
 	failOnError(err, "Error creating trie")
 
-	count := 0
-	progress := 0.00
-
+	bar := pb.StartNew(numRecords)
 	iter := ldb.NewIterator(nil, nil)
 	for iter.Next() {
-		count ++
-		if count >= numRecords / 10000 {
-			count = 0
-			progress += 0.01
-			fmt.Printf("%.2f%%\n", progress)
-		}
+		bar.Increment()
 
 		key := iter.Key()
 		val := iter.Value()
@@ -195,6 +183,7 @@ func rebuildFromFrontline() {
 		}
 	}
 
+	bar.FinishPrint("End")
 	iter.Release()
 	failOnError(iter.Error(), "Iter error")
 
